@@ -25,13 +25,15 @@ class STN3d(nn.Module):
         self.bn4 = nn.BatchNorm1d(512)
         self.bn5 = nn.BatchNorm1d(256)
 
-
-    def forward(self, x):
+    def forward(self, x, lens=None):
         batchsize = x.size()[0]
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
-        x = torch.max(x, 2, keepdim=True)[0]
+        if lens is not None:
+            x = torch.stack([torch.max(it.narrow(1, 0, l), 1, keepdim=True)[0] for it, l in zip(x, lens)])
+        else:
+            x = torch.max(x, 2, keepdim=True)[0]
         x = x.view(-1, 1024)
 
         x = F.relu(self.bn4(self.fc1(x)))
@@ -99,9 +101,9 @@ class PointNetfeat(nn.Module):
         if self.feature_transform:
             self.fstn = STNkd(k=64)
 
-    def forward(self, x):
+    def forward(self, x, lens=None):
         n_pts = x.size()[2]
-        trans = self.stn(x)
+        trans = self.stn(x, lens)
         x = x.transpose(2, 1)
         x = torch.bmm(x, trans)
         x = x.transpose(2, 1)
@@ -118,7 +120,10 @@ class PointNetfeat(nn.Module):
         pointfeat = x
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
-        x = torch.max(x, 2, keepdim=True)[0]
+        if lens is not None:
+            x = torch.stack([torch.max(it.narrow(1, 0, l), 1, keepdim=True)[0] for it, l in zip(x, lens)])
+        else:
+            x = torch.max(x, 2, keepdim=True)[0]
         x = x.view(-1, 1024)
         if self.global_feat:
             return x, trans, trans_feat
@@ -188,7 +193,7 @@ class PointNetDenseReg(nn.Module):
         self.bn2 = nn.BatchNorm1d(256)
         self.bn3 = nn.BatchNorm1d(128)
 
-    def forward(self, x):
+    def forward(self, x, lens=None):
         batchsize = x.size()[0]
         n_pts = x.size()[2]
         x, trans, trans_feat = self.feat(x)
